@@ -1,11 +1,11 @@
-# Generative Recommendation with Semantic IDs (poincare)
+# Generative Recommendation with Semantic IDs (GRID)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.0%2B-red)](https://pytorch.org/)
 [![Hydra](https://img.shields.io/badge/config-hydra-89b8cd)](https://hydra.cc/)
 [![Lightning](https://img.shields.io/badge/pytorch-lightning-792ee5)](https://lightning.ai/)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.22224-b31b1b.svg)](https://arxiv.org/abs/2507.22224)
 
 
-This local repository is named **poincare**. It is based on **GRID** (Generative Recommendation with Semantic IDs), a framework for generative recommendation systems using semantic IDs developed by [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This project implements approaches for learning semantic IDs from text embedding and generating recommendations through transformer-based generative models.
+**GRID** (Generative Recommendation with Semantic IDs) is a state-of-the-art framework for generative recommendation systems using semantic IDs, developed by a group of scientists and engineers from [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This local checkout lives under the `poincare` path, but the framework and default interface should follow the official GRID repository.
 
 ## 🚀 Overview
 
@@ -26,8 +26,8 @@ GRID facilitates generative recommendation three overarching steps:
 
 ```bash
 # Clone the repository
-git clone https://github.com/snap-research/GRID.git poincare
-cd poincare
+git clone https://github.com/snap-research/GRID.git
+cd GRID
 
 # Install dependencies
 pip install -r requirements.txt
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ## 🎯 Quick Start
 
-For the local HPC setup in this repo, use:
+For the local `poincare` checkout on this machine / cluster, use:
 
 ```bash
 REPO_DIR=/data/user/cwu319/RC/poincare
