@@ -12,7 +12,7 @@ cd "${repo_root}"
 timestamp="$(date -u '+%Y-%m-%d %H:%M:%SZ')"
 commit_message="${1:-backup: ${timestamp}}"
 
-# Keep backup commits focused on source and docs, not large data or generated artifacts.
+# Keep backup commits focused on code and docs, not local data or generated artifacts.
 git add -u -- . ':(exclude)data' ':(exclude)history' ':(exclude)models' ':(exclude)outputs'
 
 while IFS= read -r -d '' path; do

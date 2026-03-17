@@ -194,6 +194,9 @@ cython_debug/
 .cursorindexingignore
 
 # Project artifacts
+._*
+.project-root
+*.tgz
 data/
 history/
 models/
