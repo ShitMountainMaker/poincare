@@ -70,13 +70,25 @@ class EuclideanPrefixLoss(nn.Module):
 
 
 class HyperbolicPrefixContrastiveLoss(nn.Module):
-    """A minimal hyperbolic prefix-aware regularizer with a small projector."""
+    """Prefix-aware hyperbolic band loss over pairwise semantic relations."""
 
     def __init__(
         self,
         input_dim: int,
         projector_dim: int = 64,
-        negative_margin: float = 1.0,
+        other_target_min_distance: float = 0.4,
+        other_target_max_distance: float = 1.2,
+        other_target_gamma: float = 1.5,
+        other_bandwidth: float = 0.25,
+        other_weight: float = 1.0,
+        sibling_target_distance: float = 0.55,
+        sibling_bandwidth: float = 0.08,
+        sibling_weight: float = 2.5,
+        sibling_lower_scale: float = 2.0,
+        full_match_target_distance: float = 0.7,
+        full_match_bandwidth: float = 0.1,
+        full_match_weight: float = 1.5,
+        full_match_lower_scale: float = 3.0,
         max_ball_norm: float = 0.99,
         eps: float = 1e-6,
     ) -> None:
@@ -86,7 +98,19 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
             nn.ReLU(),
             nn.Linear(projector_dim, projector_dim),
         )
-        self.negative_margin = negative_margin
+        self.other_target_min_distance = other_target_min_distance
+        self.other_target_max_distance = other_target_max_distance
+        self.other_target_gamma = other_target_gamma
+        self.other_bandwidth = other_bandwidth
+        self.other_weight = other_weight
+        self.sibling_target_distance = sibling_target_distance
+        self.sibling_bandwidth = sibling_bandwidth
+        self.sibling_weight = sibling_weight
+        self.sibling_lower_scale = sibling_lower_scale
+        self.full_match_target_distance = full_match_target_distance
+        self.full_match_bandwidth = full_match_bandwidth
+        self.full_match_weight = full_match_weight
+        self.full_match_lower_scale = full_match_lower_scale
         self.max_ball_norm = max_ball_norm
         self.eps = eps
 
@@ -105,13 +129,39 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
         lcp = pairwise_lcp_matrix(cluster_ids.long()).float()
         lcp_ratio = lcp / max(num_hierarchies, 1)
         pairwise_dist = pairwise_poincare_distance(projected_embeddings, eps=self.eps)
+        exact_match_mask = lcp.eq(num_hierarchies)
+        if num_hierarchies > 1:
+            sibling_mask = lcp.eq(num_hierarchies - 1)
+        else:
+            sibling_mask = torch.zeros_like(exact_match_mask)
 
-        positive_weights = lcp_ratio
-        negative_weights = 1.0 - lcp_ratio
         pair_mask = upper_triangle_pair_mask(batch_size, device=embeddings.device)
+        lcp_ratio_others = lcp_ratio.clamp(
+            max=max((num_hierarchies - 2) / max(num_hierarchies, 1), 0.0)
+        )
 
-        positive_loss = positive_weights * pairwise_dist.pow(2)
-        negative_loss = negative_weights * F.relu(
-            self.negative_margin - pairwise_dist
-        ).pow(2)
-        return (positive_loss[pair_mask] + negative_loss[pair_mask]).mean()
+        target_distance = self.other_target_min_distance + (
+            (1.0 - lcp_ratio_others).pow(self.other_target_gamma)
+            * (self.other_target_max_distance - self.other_target_min_distance)
+        )
+        bandwidth = torch.full_like(target_distance, self.other_bandwidth)
+        pair_weight = torch.full_like(target_distance, self.other_weight)
+        lower_scale = torch.ones_like(target_distance)
+
+        target_distance[sibling_mask] = self.sibling_target_distance
+        bandwidth[sibling_mask] = self.sibling_bandwidth
+        pair_weight[sibling_mask] = self.sibling_weight
+        lower_scale[sibling_mask] = self.sibling_lower_scale
+
+        target_distance[exact_match_mask] = self.full_match_target_distance
+        bandwidth[exact_match_mask] = self.full_match_bandwidth
+        pair_weight[exact_match_mask] = self.full_match_weight
+        lower_scale[exact_match_mask] = self.full_match_lower_scale
+
+        a_ij = (target_distance - bandwidth).clamp_min(0.0)
+        b_ij = target_distance + bandwidth
+        lower_penalty = lower_scale * F.relu(a_ij - pairwise_dist).pow(2)
+        upper_penalty = F.relu(pairwise_dist - b_ij).pow(2)
+        band_loss = pair_weight * (lower_penalty + upper_penalty)
+
+        return band_loss[pair_mask].mean()

@@ -12,11 +12,23 @@ model:
     _target_: src.components.prefix_losses.HyperbolicPrefixContrastiveLoss
     input_dim: ${model.input_dim}
     projector_dim: 64
-    negative_margin: 1.0
+    other_target_min_distance: 0.4
+    other_target_max_distance: 1.2
+    other_target_gamma: 1.5
+    other_bandwidth: 0.25
+    other_weight: 1.0
+    sibling_target_distance: 0.55
+    sibling_bandwidth: 0.08
+    sibling_weight: 2.5
+    sibling_lower_scale: 2.0
+    full_match_target_distance: 0.7
+    full_match_bandwidth: 0.1
+    full_match_weight: 1.5
+    full_match_lower_scale: 3.0
     max_ball_norm: 0.99
     eps: 1e-6
   hierarchy_loss_weight: 0.05
-  hierarchy_start_step: 0
+  hierarchy_start_step: 5
 
 paths:
   output_dir: ${paths.root_dir}/outputs/semantic_id_stage/inference/hyp_prefix

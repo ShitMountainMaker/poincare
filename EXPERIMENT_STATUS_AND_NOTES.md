@@ -1,8 +1,39 @@
 # Experiment Status And Notes
 
-Last updated: 2026-03-16 (Asia/Shanghai)
+Last updated: 2026-03-17 (Asia/Shanghai)
 
 This file summarizes the current GRID experiment state in the local `poincare` checkout, the code changes already made, the active run recipes, the main results so far, and the points that must be kept in mind before making new comparisons.
+
+## 0. Current Local V3 Update
+
+This section describes the current local `poincare` changes that were prepared after the earlier `cf92b56` doc-only commit. It supersedes the older discussion of the `hyp` loss in later sections when they disagree.
+
+Main delta versus the previous `hyp` implementation:
+
+- `src/components/prefix_losses.py` no longer uses the old `positive_weights * d^2 + negative_weights * relu(margin - d)^2` formulation.
+- The `HyperbolicPrefixContrastiveLoss` is now a single hyperbolic band loss that assigns different target distance bands to:
+  - full semantic-ID matches
+  - sibling / near-collision pairs
+  - all other pairs as a smooth function of LCP depth
+- full matches no longer collapse toward distance `0` as the strongest positives; they now receive a non-zero target band with a stronger lower-bound penalty.
+- sibling / near-collision pairs now carry the highest importance, but they are kept in a medium-distance band instead of being treated as generic far negatives.
+- `hierarchy_start_step` for the `hyp` configuration was moved from `0` to `5` to avoid injecting hierarchy supervision before the quantizer assignments stabilize.
+- Two helper scripts were added for the current `beauty_seed42` sweep under `outputs/poincare_band_v3`:
+  - `scripts/submit_beauty_seed42_poincare_v3_semantic.sh`
+  - `scripts/submit_beauty_seed42_poincare_v3_downstreams.sh`
+
+What did not change in this version:
+
+- the main tokenizer / quantizer is still Euclidean
+- the Poincare branch is still an auxiliary hierarchy regularizer on quantized embeddings
+- no second uniqueness loss was added
+- Euclidean prefix loss and the rest of the GRID training path were left untouched
+
+Practical interpretation of this v3 change:
+
+- the previous version mainly decided who to pull and who to push
+- the current version instead tries to place each pair type into a more appropriate hyperbolic distance band
+- this makes the method closer to a hierarchy-shaping regularizer than a plain contrastive repulsion term
 
 ## 1. Scope of What Has Been Changed
 
