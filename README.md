@@ -1,11 +1,11 @@
-# Generative Recommendation with Semantic IDs (hyper)
+# Generative Recommendation with Semantic IDs (poincare)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.0%2B-red)](https://pytorch.org/)
 [![Hydra](https://img.shields.io/badge/config-hydra-89b8cd)](https://hydra.cc/)
 [![Lightning](https://img.shields.io/badge/pytorch-lightning-792ee5)](https://lightning.ai/)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.22224-b31b1b.svg)](https://arxiv.org/abs/2507.22224)
 
 
-This local repository is named **hyper**. It is based on **GRID** (Generative Recommendation with Semantic IDs), a framework for generative recommendation systems using semantic IDs developed by [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This project implements approaches for learning semantic IDs from text embedding and generating recommendations through transformer-based generative models.
+This local repository is named **poincare**. It is based on **GRID** (Generative Recommendation with Semantic IDs), a framework for generative recommendation systems using semantic IDs developed by [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This project implements approaches for learning semantic IDs from text embedding and generating recommendations through transformer-based generative models.
 
 ## 🚀 Overview
 
@@ -26,8 +26,8 @@ GRID facilitates generative recommendation three overarching steps:
 
 ```bash
 # Clone the repository
-git clone https://github.com/snap-research/GRID.git hyper
-cd hyper
+git clone https://github.com/snap-research/GRID.git poincare
+cd poincare
 
 # Install dependencies
 pip install -r requirements.txt
@@ -38,9 +38,9 @@ pip install -r requirements.txt
 For the local HPC setup in this repo, use:
 
 ```bash
-REPO_DIR=/data/user/cwu319/RC/hyper
-DATA_ROOT=/data/user/cwu319/RC/hyper/data/amazon_data
-DATA_DIR=/data/user/cwu319/RC/hyper/data/amazon_data/beauty
+REPO_DIR=/data/user/cwu319/RC/poincare
+DATA_ROOT=/data/user/cwu319/RC/poincare/data/amazon_data
+DATA_DIR=/data/user/cwu319/RC/poincare/data/amazon_data/beauty
 cd "${REPO_DIR}"
 source /data/user/cwu319/conda_envs/rec/bin/activate
 ```
@@ -63,8 +63,8 @@ We provide pre-processed Amazon data explored in the [P5 paper](https://arxiv.or
 Generate embeddings from LLMs, which later will be transformed into semantic IDs. 
 
 ```bash
-cd /data/user/cwu319/RC/hyper
-python -m src.inference experiment=sem_embeds_inference_flat data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty # avaiable data includes 'beauty', 'sports', and 'toys'
+cd /data/user/cwu319/RC/poincare
+python -m src.inference experiment=sem_embeds_inference_flat data_dir=/data/user/cwu319/RC/poincare/data/amazon_data/beauty # avaiable data includes 'beauty', 'sports', and 'toys'
 ```
 
 Output:
@@ -75,7 +75,7 @@ Output:
 If you only want the original semantic ID baseline from the README pipeline, run:
 
 ```bash
-cd /data/user/cwu319/RC/hyper
+cd /data/user/cwu319/RC/poincare
 sbatch my_job.sh
 ```
 
@@ -94,7 +94,7 @@ Outputs:
 If you want to run all three semantic ID variants:
 
 ```bash
-cd /data/user/cwu319/RC/hyper
+cd /data/user/cwu319/RC/poincare
 RUN_MODE=all_three sbatch my_job.sh
 ```
 
@@ -109,7 +109,7 @@ Outputs:
 Proxy metrics are not part of the original README 1-5 pipeline. Run them only after step 3 has produced all three semantic ID outputs:
 
 ```bash
-cd /data/user/cwu319/RC/hyper
+cd /data/user/cwu319/RC/poincare
 RUN_MODE=analyze_only RUN_PROXY_METRICS=1 sbatch my_job.sh
 ```
 
@@ -123,9 +123,9 @@ Outputs:
 Train the recommendation model using the learned semantic IDs:
 
 ```bash
-cd /data/user/cwu319/RC/hyper
+cd /data/user/cwu319/RC/poincare
 python -m src.train experiment=tiger_train_flat \
-    data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty \
+    data_dir=/data/user/cwu319/RC/poincare/data/amazon_data/beauty \
     semantic_id_path=outputs/semantic_id_stage/inference/base/pickle/merged_predictions_tensor.pt \
     num_hierarchies=4
 ```
@@ -140,9 +140,9 @@ Output directory:
 Run inference to generate recommendations:
 
 ```bash
-cd /data/user/cwu319/RC/hyper
+cd /data/user/cwu319/RC/poincare
 python -m src.inference experiment=tiger_inference_flat \
-    data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty \
+    data_dir=/data/user/cwu319/RC/poincare/data/amazon_data/beauty \
     semantic_id_path=outputs/semantic_id_stage/inference/base/pickle/merged_predictions_tensor.pt \
     ckpt_path=outputs/recommendation_stage/tiger_train/checkpoints/best.ckpt \
     num_hierarchies=4

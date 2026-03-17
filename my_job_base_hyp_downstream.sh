@@ -6,7 +6,7 @@
 #SBATCH --job-name=bh_downstream
 set -euo pipefail
 
-REPO_DIR="/data/user/cwu319/RC/hyper"
+REPO_DIR="/data/user/cwu319/RC/poincare"
 CONDA_ENV_DIR="/data/user/cwu319/conda_envs/rec"
 
 DATASET_NAME="${DATASET_NAME:?Set DATASET_NAME.}"

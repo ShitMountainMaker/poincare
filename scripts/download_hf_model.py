@@ -88,7 +88,7 @@ def main() -> None:
     print(
         "python -m src.inference "
         "experiment=sem_embeds_inference_flat "
-        "data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty "
+        "data_dir=/data/user/cwu319/RC/poincare/data/amazon_data/beauty "
         f"embedding_model={output_dir}"
     )
 

@@ -6,7 +6,7 @@
 #SBATCH --job-name=bh_tiger_single
 set -euo pipefail
 
-REPO_DIR="/data/user/cwu319/RC/hyper"
+REPO_DIR="/data/user/cwu319/RC/poincare"
 CONDA_ENV_DIR="/data/user/cwu319/conda_envs/rec"
 
 DATASET_NAME="${DATASET_NAME:?Set DATASET_NAME.}"
@@ -52,4 +52,3 @@ python -m src.train \
   "seed=${SEED}" \
   "paths.output_dir=${TIGER_TRAIN_DIR}" \
   "hydra.run.dir=${TIGER_TRAIN_DIR}"
-

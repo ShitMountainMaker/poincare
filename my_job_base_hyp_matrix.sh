@@ -6,7 +6,7 @@
 #SBATCH --job-name=bh_semantic_matrix
 set -euo pipefail
 
-REPO_DIR="/data/user/cwu319/RC/hyper"
+REPO_DIR="/data/user/cwu319/RC/poincare"
 CONDA_ENV_DIR="/data/user/cwu319/conda_envs/rec"
 
 OUTPUT_ROOT="${OUTPUT_ROOT:-${REPO_DIR}/outputs/base_hyp_matrix}"

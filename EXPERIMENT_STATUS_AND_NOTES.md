@@ -2,11 +2,11 @@
 
 Last updated: 2026-03-16 (Asia/Shanghai)
 
-This file summarizes the current `hyper` experiment state, the code changes already made, the active run recipes, the main results so far, and the points that must be kept in mind before making new comparisons.
+This file summarizes the current `poincare` experiment state, the code changes already made, the active run recipes, the main results so far, and the points that must be kept in mind before making new comparisons.
 
 ## 1. Scope of What Has Been Changed
 
-Only files inside `hyper` were changed. No project-wide structural refactor was made.
+Only files inside `poincare` were changed. No project-wide structural refactor was made.
 
 Main code change already accepted:
 
@@ -337,7 +337,7 @@ Current conclusion for `beauty_seed42`:
 
 Confirmed path:
 
-- `/data/user/cwu319/RC/hyper/data/amazon_data/toys`
+- `/data/user/cwu319/RC/poincare/data/amazon_data/toys`
 
 Semantic selection result:
 
@@ -520,8 +520,8 @@ Inspired by Poincare embeddings:
 
 ## 13. Current Operational Rules To Remember
 
-- only modify files inside local `hyper`
-- only modify files inside remote cluster `hyper`
+- only modify files inside local `poincare`
+- only modify files inside remote cluster `poincare`
 - do not compare runs across different GPU recipes as if they were identical
 - semantic `1 GPU` and semantic `8 GPU` are different experimental conditions
 - proxy-best weight is not guaranteed to be downstream-best weight

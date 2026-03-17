@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH -p acd_u
-#SBATCH -o /data/user/cwu319/RC/hyper/history/output.txt
-#SBATCH -e /data/user/cwu319/RC/hyper/history/error.txt
+#SBATCH -o /data/user/cwu319/RC/poincare/history/output.txt
+#SBATCH -e /data/user/cwu319/RC/poincare/history/error.txt
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=hyper_sid_prefix
 set -euo pipefail
 
-REPO_DIR="/data/user/cwu319/RC/hyper"
+REPO_DIR="/data/user/cwu319/RC/poincare"
 CONDA_ENV_DIR="/data/user/cwu319/conda_envs/rec"
 
 cd "${REPO_DIR}" || exit 1

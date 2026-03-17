@@ -1,4 +1,4 @@
-# hyper Step-by-Step Runbook
+# poincare Step-by-Step Runbook
 
 这份文档只写固定路径、固定命令。
 
@@ -16,9 +16,9 @@
 这里默认用的是：
 
 ```text
-/data/user/cwu319/RC/hyper
-/data/user/cwu319/RC/hyper/data/amazon_data
-/data/user/cwu319/RC/hyper/data/amazon_data/beauty
+/data/user/cwu319/RC/poincare
+/data/user/cwu319/RC/poincare/data/amazon_data
+/data/user/cwu319/RC/poincare/data/amazon_data/beauty
 outputs/semantic_embeddings
 outputs/semantic_id_stage
 outputs/recommendation_stage/tiger_train
