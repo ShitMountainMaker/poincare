@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - rkmeans_train_flat
+  - _self_
+
+tags:
+- amazon-assign-ids-train
+- hyperbolic-prefix
+
+model:
+  hierarchy_regularizer:
+    _target_: src.components.prefix_losses.HyperbolicPrefixContrastiveLoss
+    input_dim: ${model.input_dim}
+    projector_dim: 64
+    negative_margin: 1.0
+    max_ball_norm: 0.99
+    eps: 1e-6
+  hierarchy_loss_weight: 0.05
+  hierarchy_start_step: 0

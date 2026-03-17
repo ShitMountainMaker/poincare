@@ -70,10 +70,13 @@ paths:
   root_dir: .
   data_dir: ${data_dir}
   log_dir: ${paths.root_dir}/logs
-  output_dir: ${hydra:runtime.output_dir}
+  output_dir: ${paths.root_dir}/outputs/recommendation_stage/tiger_inference
   work_dir: ${hydra:runtime.cwd}
-  profile_dir: ${hydra:run.dir}/profile_output
+  profile_dir: ${paths.output_dir}/profile_output
   metadata_dir: ${paths.output_dir}/metadata
+hydra:
+  run:
+    dir: ${paths.output_dir}
 logger:
   csv:
     _target_: lightning.pytorch.loggers.csv_logs.CSVLogger
@@ -218,4 +221,3 @@ extras:
   enforce_tags: true
   print_config_warnings: true
   print_config: true
-

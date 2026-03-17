@@ -1,10 +1,12 @@
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Set, TypeVar
 
 import psutil
+from fsspec.core import url_to_fs
 from lightning import Trainer
 from omegaconf import DictConfig
 
@@ -145,6 +147,11 @@ def save_metadata_to_local_or_remote(
     command_line_logger.info(
         f"Saving metadata to {metadata_path}. {metadata.to_dict()}"
     )
+
+    fs, resolved_path = url_to_fs(metadata_path)
+    metadata_dir = os.path.dirname(resolved_path)
+    if metadata_dir:
+        fs.makedirs(metadata_dir, exist_ok=True)
 
     # Convert metadata to JSON string
     json_content = json.dumps(metadata.to_dict(), indent=2)

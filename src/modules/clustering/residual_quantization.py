@@ -7,6 +7,7 @@ from lightning import LightningModule
 from lightning.pytorch.trainer.states import TrainerFn
 from torch import nn
 from torch.distributions import Categorical
+from torch.nn.modules.module import _IncompatibleKeys
 from torchmetrics import MeanMetric
 
 from src.data.loading.components.interfaces import ItemData
@@ -28,6 +29,9 @@ class ResidualQuantization(LightningModule):
         quantization_loss_weight: float = 1.0,
         reconstruction_loss_function: Optional[nn.Module] = None,
         reconstruction_loss_weight: float = 0.0,
+        hierarchy_regularizer: Optional[nn.Module] = None,
+        hierarchy_loss_weight: float = 0.0,
+        hierarchy_start_step: int = 0,
         normalize_residuals: bool = True,
         optimizer: Optional[torch.optim.Optimizer] = None,
         scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
@@ -51,6 +55,9 @@ class ResidualQuantization(LightningModule):
             quantization_loss_weight: The weight of the quantization loss.
             reconstruction_loss_function: The loss function to use for reconstruction.
             reconstruction_loss_weight: The weight of the reconstruction loss.
+            hierarchy_regularizer: Auxiliary regularizer operating on learned semantic ids.
+            hierarchy_loss_weight: The weight applied to the auxiliary hierarchy loss.
+            hierarchy_start_step: Global step after which the hierarchy loss is enabled.
             normalize_inputs: Whether to normalize the input embeddings.
             batch_norm_inputs: Whether to apply batch normalization to the input embeddings.
             train_layer_wise: Whether to train the layers one at a time. If true, each layer
@@ -70,6 +77,7 @@ class ResidualQuantization(LightningModule):
                 "decoder",
                 "quantization_layer_list",
                 "quantization_layer",
+                "hierarchy_regularizer",
             ],
         )
 
@@ -101,10 +109,14 @@ class ResidualQuantization(LightningModule):
         self.quantization_loss_weight = quantization_loss_weight
         self.reconstruction_loss_function = reconstruction_loss_function
         self.reconstruction_loss_weight = reconstruction_loss_weight
+        self.hierarchy_regularizer = hierarchy_regularizer
+        self.hierarchy_loss_weight = hierarchy_loss_weight
+        self.hierarchy_start_step = hierarchy_start_step
 
         self.train_loss = MeanMetric()
         self.train_quantization_loss = MeanMetric()
         self.train_reconstruction_loss = MeanMetric()
+        self.train_hierarchy_loss = MeanMetric()
         if self.verbose:
             # Note that if normalize_residuals is True, the residuals norm metrics below are uninformative
             self.train_first_residuals_norm_ratio = MeanMetric()
@@ -181,6 +193,50 @@ class ResidualQuantization(LightningModule):
             return nn.ModuleList(
                 modules=[copy.deepcopy(quantization_layer) for _ in range(n_layers)]
             )
+
+    def _should_relax_hierarchy_regularizer_loading(self) -> bool:
+        trainer = getattr(self, "_trainer", None)
+        trainer_state = getattr(trainer, "state", None)
+        return trainer_state is not None and trainer_state.fn == TrainerFn.PREDICTING
+
+    def load_state_dict(
+        self, state_dict: Dict[str, Any], strict: bool = True
+    ) -> _IncompatibleKeys:
+        """Allow hierarchy-regularizer state mismatches during prediction only.
+
+        The hierarchy regularizer is an auxiliary training-only module and is not used
+        for semantic-id inference. Prediction should therefore not fail if the
+        checkpoint and the inference config disagree only on this submodule.
+        """
+        if not self._should_relax_hierarchy_regularizer_loading():
+            return super().load_state_dict(state_dict, strict=strict)
+
+        hierarchy_prefix = "hierarchy_regularizer."
+        filtered_state_dict = dict(state_dict)
+        if self.hierarchy_regularizer is None:
+            filtered_state_dict = {
+                key: value
+                for key, value in filtered_state_dict.items()
+                if not key.startswith(hierarchy_prefix)
+            }
+
+        incompatible = super().load_state_dict(filtered_state_dict, strict=False)
+        missing_keys = [
+            key for key in incompatible.missing_keys if not key.startswith(hierarchy_prefix)
+        ]
+        unexpected_keys = [
+            key
+            for key in incompatible.unexpected_keys
+            if not key.startswith(hierarchy_prefix)
+        ]
+
+        if strict and (missing_keys or unexpected_keys):
+            raise RuntimeError(
+                "Error(s) in loading state_dict for ResidualQuantization: "
+                f"missing_keys={missing_keys}, unexpected_keys={unexpected_keys}"
+            )
+
+        return _IncompatibleKeys(missing_keys, unexpected_keys)
 
     def forward(
         self, embeddings: torch.Tensor
@@ -268,7 +324,7 @@ class ResidualQuantization(LightningModule):
 
     def model_step(
         self, model_input: ItemData
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Perform a forward pass and compute the loss for a single batch.
 
@@ -281,6 +337,7 @@ class ResidualQuantization(LightningModule):
             all_residuals: The residuals at each layer, unless self.track_residuals is
                 False, in which case this is None.
                     Shape (batch_size, n_features, n_layers)
+            quantized_embeddings: The sum of the selected embeddings across hierarchies.
             quantization_loss: The cumulative loss from the quantization layers.
             reconstruction_loss: The reconstruction loss.
         """
@@ -312,8 +369,18 @@ class ResidualQuantization(LightningModule):
         return (
             cluster_ids,
             all_residuals,
+            quantized_embeddings,
             quantization_loss,
             reconstruction_loss,
+        )
+
+    def should_compute_hierarchy_loss(self) -> bool:
+        """Enable the hierarchy loss only after warmup and full quantizer initialization."""
+        return (
+            self.hierarchy_regularizer is not None
+            and self.hierarchy_loss_weight > 0.0
+            and self.global_step >= self.hierarchy_start_step
+            and self.quantization_layer_list[-1].is_initialized
         )
 
     def training_step(self, batch: Tuple[ItemData]) -> torch.Tensor:
@@ -332,21 +399,33 @@ class ResidualQuantization(LightningModule):
         (
             cluster_ids,
             all_residuals,
+            quantized_embeddings,
             quantization_loss,
             reconstruction_loss,
         ) = self.model_step(model_input)
 
+        if self.should_compute_hierarchy_loss():
+            hierarchy_loss = self.hierarchy_regularizer(
+                embeddings=quantized_embeddings,
+                cluster_ids=cluster_ids.detach(),
+            )
+        else:
+            hierarchy_loss = torch.tensor(0.0, device=self.device)
+
         loss = (
             self.quantization_loss_weight * quantization_loss
             + self.reconstruction_loss_weight * reconstruction_loss
+            + self.hierarchy_loss_weight * hierarchy_loss
         )
         self.train_loss(loss)
         self.train_quantization_loss(quantization_loss)
         self.train_reconstruction_loss(reconstruction_loss)
+        self.train_hierarchy_loss(hierarchy_loss)
         train_dict_to_log = {
             "train/loss": self.train_loss,
             "train/quantization_loss": self.train_quantization_loss,
             "train/reconstruction_loss": self.train_reconstruction_loss,
+            "train/hierarchy_loss": self.train_hierarchy_loss,
         }
 
         with torch.no_grad():
@@ -460,6 +539,9 @@ class ResidualQuantization(LightningModule):
         """Lightning hook that is called when training begins."""
         if hasattr(self, "train_loss"):
             self.train_loss.reset()
+            self.train_quantization_loss.reset()
+            self.train_reconstruction_loss.reset()
+            self.train_hierarchy_loss.reset()
 
         self.current_layer = 0
         for layer in self.quantization_layer_list:
@@ -603,8 +685,14 @@ class ResidualQuantization(LightningModule):
         (
             cluster_ids,
             all_residuals,
-            loss,
+            _quantized_embeddings,
+            quantization_loss,
+            reconstruction_loss,
         ) = self.model_step(batch)
+        loss = (
+            self.quantization_loss_weight * quantization_loss
+            + self.reconstruction_loss_weight * reconstruction_loss
+        )
         loss_to_aggregate(loss)
 
         (
@@ -722,7 +810,7 @@ class ResidualQuantization(LightningModule):
             model_output: A OneKeyPerPredictionOutput object containing the item
                 ids as keys and the cluster ids as predictions.
         """
-        cluster_ids, _, _, _ = self.model_step(batch)
+        cluster_ids, _, _, _, _ = self.model_step(batch)
 
         item_ids = [
             item_id.item() if isinstance(item_id, torch.Tensor) else item_id

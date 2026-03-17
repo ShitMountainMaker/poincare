@@ -243,13 +243,14 @@ callbacks:
   model_checkpoint:
     _target_: lightning.pytorch.callbacks.ModelCheckpoint
     dirpath: ${paths.output_dir}/checkpoints
-    filename: checkpoint_{epoch:03d}_{step:06d}
+    filename: best
     monitor: val/recall@5
     verbose: true
-    save_last: null
+    save_last: false
     save_top_k: 1
     mode: max
-    auto_insert_metric_name: true
+    auto_insert_metric_name: false
+    enable_version_counter: false
     save_weights_only: false
     every_n_train_steps: null
     train_time_interval: null
@@ -303,10 +304,13 @@ paths:
   root_dir: .
   data_dir: ${data_dir}
   log_dir: ${paths.root_dir}/logs
-  output_dir: ${hydra:runtime.output_dir}
+  output_dir: ${paths.root_dir}/outputs/recommendation_stage/tiger_train
   work_dir: ${hydra:runtime.cwd}
-  profile_dir: ${hydra:run.dir}/profile_output
+  profile_dir: ${paths.output_dir}/profile_output
   metadata_dir: ${paths.output_dir}/metadata
+hydra:
+  run:
+    dir: ${paths.output_dir}
 extras:
   ignore_warnings: false
   enforce_tags: true
@@ -335,4 +339,3 @@ eval:
       recall:
         _target_: src.components.eval_metrics.Recall
         _partial_: true
-

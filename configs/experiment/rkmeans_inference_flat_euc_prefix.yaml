@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - rkmeans_inference_flat
+  - _self_
+
+tags:
+- amazon-assign-ids-inference
+- euclidean-prefix
+
+model:
+  hierarchy_regularizer:
+    _target_: src.components.prefix_losses.EuclideanPrefixLoss
+    normalize_embeddings: true
+    max_normalized_distance: 4.0
+  hierarchy_loss_weight: 0.1
+  hierarchy_start_step: 0
+
+paths:
+  output_dir: ${paths.root_dir}/outputs/semantic_id_stage/inference/euc_prefix

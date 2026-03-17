@@ -159,6 +159,9 @@ model:
   optimizer: ${optim.optimizer}
   scheduler: null
   quantization_layer_list: null
+  hierarchy_regularizer: null
+  hierarchy_loss_weight: 0.0
+  hierarchy_start_step: 0
   training_loop_function:
     _target_: src.components.training_loop_functions.scale_loss_by_world_size_for_initialization_training_loop
     _partial_: true
@@ -169,7 +172,7 @@ callbacks:
     filename: checkpoint_{epoch:03d}_{step:06d}
     monitor: train/loss
     verbose: true
-    save_last: null
+    save_last: true
     save_top_k: 1
     mode: min
     auto_insert_metric_name: false
@@ -211,10 +214,13 @@ paths:
   root_dir: .
   data_dir: ${data_dir}
   log_dir: ${paths.root_dir}/logs
-  output_dir: ${hydra:runtime.output_dir}
+  output_dir: ${paths.root_dir}/outputs/semantic_id_stage/base
   work_dir: ${hydra:runtime.cwd}
-  profile_dir: ${hydra:run.dir}/profile_output
+  profile_dir: ${paths.output_dir}/profile_output
   metadata_dir: ${paths.output_dir}/metadata
+hydra:
+  run:
+    dir: ${paths.output_dir}
 extras:
   ignore_warnings: false
   enforce_tags: true

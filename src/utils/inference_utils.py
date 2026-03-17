@@ -200,6 +200,36 @@ class LocalPickleWriter(BaseBufferedWriter):
         )
         self.post_processing_functions = post_processing_functions
 
+    def _should_sync_distributed(self) -> bool:
+        return torch.distributed.is_available() and torch.distributed.is_initialized()
+
+    def _prediction_shard_files(self) -> List[str]:
+        return sorted(
+            [
+                file_name
+                for file_name in os.listdir(self.output_dir)
+                if file_name.startswith("predictions_") and file_name.endswith(".pkl")
+            ]
+        )
+
+    def _cleanup_stale_outputs(self) -> None:
+        stale_files = self._prediction_shard_files()
+        stale_files.extend(
+            [
+                file_name
+                for file_name in (
+                    "merged_predictions.pkl",
+                    "merged_predictions_tensor.pt",
+                )
+                if os.path.exists(os.path.join(self.output_dir, file_name))
+            ]
+        )
+
+        for file_name in stale_files:
+            file_path = os.path.join(self.output_dir, file_name)
+            os.remove(file_path)
+            log.info(f"Removed stale inference artifact {file_path}.")
+
     def _create_file_path(self) -> str:
         """Create a file path for the pickle file."""
         return f"predictions_{self.global_rank}_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%f')[:-3]}.pkl"
@@ -223,6 +253,20 @@ class LocalPickleWriter(BaseBufferedWriter):
         )
 
     @retry()
+    def on_predict_start(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        if self.should_merge_files_on_main:
+            if self._should_sync_distributed():
+                torch.distributed.barrier()
+            if self.global_rank == 0:
+                self._cleanup_stale_outputs()
+            if self._should_sync_distributed():
+                torch.distributed.barrier()
+
+    @retry()
     def on_predict_end(
         self,
         trainer: Trainer,
@@ -233,14 +277,14 @@ class LocalPickleWriter(BaseBufferedWriter):
         if self.should_merge_files_on_main:
             # if we use multiple workers, we need to wait for all of them to finish writing
             # before merging the files
-            if trainer.global_rank != None:
+            if self._should_sync_distributed():
                 torch.distributed.barrier()
             if self.global_rank == 0:
                 log.info("Merging pickle files on main process.")
                 self._merge_files()
 
             # other processes can continue after merging
-            if trainer.global_rank != None:
+            if self._should_sync_distributed():
                 torch.distributed.barrier()
 
         # conducting post-processing functions on the files
@@ -253,12 +297,16 @@ class LocalPickleWriter(BaseBufferedWriter):
                         process_func["function"](file_path)
                 else:
                     process_func["function"](file_path)
-                if trainer.global_rank != None:
+                if self._should_sync_distributed():
                     torch.distributed.barrier()
 
     def _merge_files(self):
         """Merge all pickle files in the output directory into a single file."""
-        all_files = [f for f in os.listdir(self.output_dir) if f.endswith(".pkl")]
+        all_files = self._prediction_shard_files()
+        if not all_files:
+            raise FileNotFoundError(
+                f"No prediction shard files were found in {self.output_dir}."
+            )
         merged_data = []
         for file in all_files:
             with open(os.path.join(self.output_dir, file), "rb") as f:
@@ -278,6 +326,6 @@ class LocalPickleWriter(BaseBufferedWriter):
                 merged_data_tensor.cpu(),
                 os.path.join(self.output_dir, "merged_predictions_tensor.pt"),
             )
-        log.info(
-            f"Merged {len(merged_data_tensor)} rows into merged_predictions_tensor.pt. as pytorch tensor"
-        )
+            log.info(
+                f"Merged {len(merged_data_tensor)} rows into merged_predictions_tensor.pt. as pytorch tensor"
+            )

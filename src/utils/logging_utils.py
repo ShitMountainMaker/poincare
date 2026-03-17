@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning_utilities.core.rank_zero import rank_zero_only
 from omegaconf import DictConfig, OmegaConf
+from torch.nn.parameter import UninitializedParameter
 
 from src.utils import pylogger
 
@@ -14,6 +15,12 @@ log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
 # logging constants
 END_RUN = "end_run"
+
+
+def _safe_parameter_numel(parameter: Any) -> int:
+    if isinstance(parameter, UninitializedParameter):
+        return 0
+    return parameter.numel()
 
 
 def convert_dict_to_json_string(data: dict) -> str:
@@ -85,12 +92,14 @@ def log_hyperparameters(
     hparams["model"] = cfg["model"]
 
     # save number of model parameters
-    hparams["model/params/total"] = sum(p.numel() for p in model.parameters())
+    hparams["model/params/total"] = sum(
+        _safe_parameter_numel(p) for p in model.parameters()
+    )
     hparams["model/params/trainable"] = sum(
-        p.numel() for p in model.parameters() if p.requires_grad
+        _safe_parameter_numel(p) for p in model.parameters() if p.requires_grad
     )
     hparams["model/params/non_trainable"] = sum(
-        p.numel() for p in model.parameters() if not p.requires_grad
+        _safe_parameter_numel(p) for p in model.parameters() if not p.requires_grad
     )
 
     hparams["data_loading"] = cfg["data_loading"]

@@ -191,6 +191,8 @@ class BaseJobLauncher:
         os.environ["METADATA_DIR"] = self.metadata_dir
         self.cfg.paths.metadata_dir = self.metadata_dir
         self.metadata_path = os.path.join(self.metadata_dir, "restart_metadata.json")
+        if "://" not in self.metadata_dir:
+            os.makedirs(self.metadata_dir, exist_ok=True)
         self.logger.info(f"Using metadata dir: {self.metadata_dir}")
 
     def prepare_command(self):

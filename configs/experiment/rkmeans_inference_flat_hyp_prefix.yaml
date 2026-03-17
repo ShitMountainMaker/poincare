@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - rkmeans_inference_flat
+  - _self_
+
+tags:
+- amazon-assign-ids-inference
+- hyperbolic-prefix
+
+model:
+  hierarchy_regularizer:
+    _target_: src.components.prefix_losses.HyperbolicPrefixContrastiveLoss
+    input_dim: ${model.input_dim}
+    projector_dim: 64
+    negative_margin: 1.0
+    max_ball_norm: 0.99
+    eps: 1e-6
+  hierarchy_loss_weight: 0.05
+  hierarchy_start_step: 0
+
+paths:
+  output_dir: ${paths.root_dir}/outputs/semantic_id_stage/inference/hyp_prefix

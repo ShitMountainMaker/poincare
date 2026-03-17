@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - rkmeans_train_flat
+  - _self_
+
+tags:
+- amazon-assign-ids-train
+- euclidean-prefix
+
+model:
+  hierarchy_regularizer:
+    _target_: src.components.prefix_losses.EuclideanPrefixLoss
+    normalize_embeddings: true
+    max_normalized_distance: 4.0
+  hierarchy_loss_weight: 0.1
+  hierarchy_start_step: 0

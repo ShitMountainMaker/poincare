@@ -1,11 +1,11 @@
-# Generative Recommendation with Semantic IDs (GRID)
+# Generative Recommendation with Semantic IDs (hyper)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.0%2B-red)](https://pytorch.org/)
 [![Hydra](https://img.shields.io/badge/config-hydra-89b8cd)](https://hydra.cc/)
 [![Lightning](https://img.shields.io/badge/pytorch-lightning-792ee5)](https://lightning.ai/)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.22224-b31b1b.svg)](https://arxiv.org/abs/2507.22224)
 
 
-**GRID** (Generative Recommendation with Semantic IDs) is a state-of-the-art framework for generative recommendation systems using semantic IDs, developed by a group of scientists and engineers from [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This project implements novel approaches for learning semantic IDs from text embedding and generating recommendations through transformer-based generative models.
+This local repository is named **hyper**. It is based on **GRID** (Generative Recommendation with Semantic IDs), a framework for generative recommendation systems using semantic IDs developed by [Snap Research](https://research.snap.com/team/user-modeling-and-personalization.html). This project implements approaches for learning semantic IDs from text embedding and generating recommendations through transformer-based generative models.
 
 ## 🚀 Overview
 
@@ -26,14 +26,24 @@ GRID facilitates generative recommendation three overarching steps:
 
 ```bash
 # Clone the repository
-git clone https://github.com/snap-research/GRID.git
-cd GRID
+git clone https://github.com/snap-research/GRID.git hyper
+cd hyper
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
 ## 🎯 Quick Start
+
+For the local HPC setup in this repo, use:
+
+```bash
+REPO_DIR=/data/user/cwu319/RC/hyper
+DATA_ROOT=/data/user/cwu319/RC/hyper/data/amazon_data
+DATA_DIR=/data/user/cwu319/RC/hyper/data/amazon_data/beauty
+cd "${REPO_DIR}"
+source /data/user/cwu319/conda_envs/rec/bin/activate
+```
 
 ### 1. Data Preparation
 
@@ -53,33 +63,59 @@ We provide pre-processed Amazon data explored in the [P5 paper](https://arxiv.or
 Generate embeddings from LLMs, which later will be transformed into semantic IDs. 
 
 ```bash
-python -m src.inference experiment=sem_embeds_inference_flat data_dir=data/amazon_data/beauty # avaiable data includes 'beauty', 'sports', and 'toys'
+cd /data/user/cwu319/RC/hyper
+python -m src.inference experiment=sem_embeds_inference_flat data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty # avaiable data includes 'beauty', 'sports', and 'toys'
 ```
+
+Output:
+`outputs/semantic_embeddings/pickle/merged_predictions_tensor.pt`
 
 ### 3. Train and Generate Semantic IDs
 
-Learn semantic ID centroids for embeddings generated in step 2:
+If you only want the original semantic ID baseline from the README pipeline, run:
 
 ```bash
-python -m src.train experiment=rkmeans_train_flat \
-    data_dir=data/amazon_data/beauty \
-    embedding_path=<output_path_from_step_2>/merged_predictions_tensor.pt \ # this can be found in the log dirs in step2
-    embedding_dim=2048 \ # the model dimension of the LLMs you use in step 2. 2048 for flan-t5-xl as used in this example.
-    num_hierarchies=3 \  # we train 3 codebooks
-    codebook_width=256 \ # each codebook has 256 rows of centroids  
+cd /data/user/cwu319/RC/hyper
+sbatch my_job.sh
 ```
 
-Generate SIDs:
+This uses the fixed-path baseline in `my_job.sh`:
+
+```text
+RUN_MODE=base_only
+RUN_PROXY_METRICS=0
+```
+
+Outputs:
+`outputs/semantic_id_stage/base`
+`outputs/semantic_id_stage/base/checkpoints/last.ckpt`
+`outputs/semantic_id_stage/inference/base/pickle/merged_predictions_tensor.pt`
+
+If you want to run all three semantic ID variants:
 
 ```bash
-python -m src.inference experiment=rkmeans_inference_flat \
-    data_dir=data/amazon_data/beauty \
-    embedding_path=<output_path_from_step_2>/merged_predictions_tensor.pt \ 
-    embedding_dim=2048 \ 
-    num_hierarchies=3 \  
-    codebook_width=256 \ 
-    ckpt_path=<the_checkpoint_you_just_get_above> # this can be found in the log dir for training SIDs
+cd /data/user/cwu319/RC/hyper
+RUN_MODE=all_three sbatch my_job.sh
 ```
+
+Outputs:
+`outputs/semantic_id_stage/base`
+`outputs/semantic_id_stage/euc_prefix`
+`outputs/semantic_id_stage/hyp_prefix`
+`outputs/semantic_id_stage/inference/base`
+`outputs/semantic_id_stage/inference/euc_prefix`
+`outputs/semantic_id_stage/inference/hyp_prefix`
+
+Proxy metrics are not part of the original README 1-5 pipeline. Run them only after step 3 has produced all three semantic ID outputs:
+
+```bash
+cd /data/user/cwu319/RC/hyper
+RUN_MODE=analyze_only RUN_PROXY_METRICS=1 sbatch my_job.sh
+```
+
+Outputs:
+`outputs/semantic_id_stage/proxy_metrics`
+`outputs/semantic_id_stage/semantic_id_stage_comparison.csv`
 
 
 ### 4. Train Generative Recommendation Model with Semantic IDs
@@ -87,23 +123,35 @@ python -m src.inference experiment=rkmeans_inference_flat \
 Train the recommendation model using the learned semantic IDs:
 
 ```bash
+cd /data/user/cwu319/RC/hyper
 python -m src.train experiment=tiger_train_flat \
-    data_dir=data/amazon_data/beauty \ 
-    semantic_id_path=<output_path_from_step_3>/pickle/merged_predictions_tensor.pt \
-    num_hierarchies=4 # Please note that we add 1 for num_hierarchies because in the previous step we appended one additional digit to de-duplicate the semantic IDs we generate.
+    data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty \
+    semantic_id_path=outputs/semantic_id_stage/inference/base/pickle/merged_predictions_tensor.pt \
+    num_hierarchies=4
 ```
 
-### 4. Generate Recommendations
+Use `num_hierarchies=4` because the semantic ID inference step appends one additional digit for de-duplication.
+
+Output directory:
+`outputs/recommendation_stage/tiger_train`
+
+### 5. Generate Recommendations
 
 Run inference to generate recommendations:
 
 ```bash
+cd /data/user/cwu319/RC/hyper
 python -m src.inference experiment=tiger_inference_flat \
-    data_dir=data/amazon_data/beauty \ 
-    semantic_id_path=<output_path_from_step_3>/pickle/merged_predictions_tensor.pt \
-    ckpt_path=<the_checkpoint_you_just_get_above> \ # this can be found in the log dir for training GR models
-    num_hierarchies=4 \ # Please note that we add 1 for num_hierarchies because in the previous step we appended one additional digit to de-duplicate the semantic IDs we generate.
+    data_dir=/data/user/cwu319/RC/hyper/data/amazon_data/beauty \
+    semantic_id_path=outputs/semantic_id_stage/inference/base/pickle/merged_predictions_tensor.pt \
+    ckpt_path=outputs/recommendation_stage/tiger_train/checkpoints/best.ckpt \
+    num_hierarchies=4
 ```
+
+Use the `best.ckpt` checkpoint from step 4. `num_hierarchies=4` matches the de-duplicated semantic ID length.
+
+Output directory:
+`outputs/recommendation_stage/tiger_inference`
 
 ## Supported Models:
 
