@@ -17,6 +17,26 @@ DEFAULT_CATEGORY_FIELDS = (
 )
 
 
+def pairwise_lcp_matrix(cluster_ids: torch.Tensor) -> torch.Tensor:
+    if cluster_ids.dim() != 2:
+        raise ValueError("cluster_ids must have shape [batch_size, num_hierarchies].")
+
+    equality_matrix = cluster_ids.unsqueeze(1).eq(cluster_ids.unsqueeze(0))
+    prefix_matches = equality_matrix.to(dtype=torch.int64).cumprod(dim=-1)
+    return prefix_matches.sum(dim=-1)
+
+
+def pairwise_squared_euclidean_distance(embeddings: torch.Tensor) -> torch.Tensor:
+    sq_norm = embeddings.pow(2).sum(dim=-1, keepdim=True)
+    return (
+        sq_norm + sq_norm.transpose(0, 1) - 2.0 * embeddings @ embeddings.transpose(0, 1)
+    ).clamp_min(0.0)
+
+
+def upper_triangle_pair_mask(size: int, device: torch.device) -> torch.Tensor:
+    return torch.triu(torch.ones(size, size, dtype=torch.bool, device=device), diagonal=1)
+
+
 def _normalize_item_id(item_id: Any) -> int:
     if isinstance(item_id, torch.Tensor):
         return int(item_id.item())
@@ -457,6 +477,160 @@ def compute_sibling_separation(
     }
 
 
+def _masked_distance_mean(
+    pairwise_dist: torch.Tensor,
+    mask: torch.Tensor,
+) -> Optional[float]:
+    values = pairwise_dist[mask]
+    if values.numel() == 0:
+        return None
+    return float(values.mean().item())
+
+
+def compute_pair_type_distance_ordering(
+    cluster_ids: torch.Tensor,
+    embeddings: torch.Tensor,
+) -> Dict[str, Any]:
+    if cluster_ids.size(0) < 2:
+        return {
+            "full_collision_distance_mean": None,
+            "sibling_distance_mean": None,
+            "mid_prefix_distance_mean": None,
+            "unrelated_distance_mean": None,
+            "distance_gap_full_minus_sibling": None,
+            "distance_gap_unrelated_minus_sibling": None,
+        }
+
+    pairwise_dist = pairwise_squared_euclidean_distance(embeddings.float()).sqrt()
+    lcp = pairwise_lcp_matrix(cluster_ids.long())
+    pair_mask = upper_triangle_pair_mask(cluster_ids.size(0), device=cluster_ids.device)
+    num_hierarchies = cluster_ids.size(1)
+
+    full_mask = pair_mask & lcp.eq(num_hierarchies)
+    if num_hierarchies > 1:
+        sibling_mask = pair_mask & lcp.eq(num_hierarchies - 1)
+    else:
+        sibling_mask = torch.zeros_like(pair_mask)
+    if num_hierarchies > 2:
+        mid_prefix_mask = pair_mask & lcp.eq(num_hierarchies - 2)
+    else:
+        mid_prefix_mask = torch.zeros_like(pair_mask)
+    unrelated_mask = pair_mask & lcp.eq(0)
+
+    full_mean = _masked_distance_mean(pairwise_dist, full_mask)
+    sibling_mean = _masked_distance_mean(pairwise_dist, sibling_mask)
+    mid_prefix_mean = _masked_distance_mean(pairwise_dist, mid_prefix_mask)
+    unrelated_mean = _masked_distance_mean(pairwise_dist, unrelated_mask)
+
+    return {
+        "full_collision_distance_mean": full_mean,
+        "sibling_distance_mean": sibling_mean,
+        "mid_prefix_distance_mean": mid_prefix_mean,
+        "unrelated_distance_mean": unrelated_mean,
+        "distance_gap_full_minus_sibling": (
+            full_mean - sibling_mean
+            if full_mean is not None and sibling_mean is not None
+            else None
+        ),
+        "distance_gap_unrelated_minus_sibling": (
+            unrelated_mean - sibling_mean
+            if unrelated_mean is not None and sibling_mean is not None
+            else None
+        ),
+    }
+
+
+def compute_same_parent_leaf_metrics(
+    cluster_ids: torch.Tensor,
+    embeddings: torch.Tensor,
+) -> Dict[str, Any]:
+    num_hierarchies = cluster_ids.size(1)
+    if num_hierarchies < 2:
+        return {
+            "same_parent_leaf_uniqueness": None,
+            "same_parent_collision_rate": None,
+            "same_parent_assignment_margin": None,
+            "same_parent_positive_margin_fraction": None,
+        }
+
+    parents: Dict[Tuple[int, ...], Dict[int, List[int]]] = defaultdict(lambda: defaultdict(list))
+    for item_idx, row in enumerate(cluster_ids.tolist()):
+        parent_prefix = tuple(row[:-1])
+        leaf_token = int(row[-1])
+        parents[parent_prefix][leaf_token].append(item_idx)
+
+    weighted_leaf_uniqueness = 0.0
+    weighted_collision_rate = 0.0
+    uniqueness_items = 0
+    assignment_margin_sum = 0.0
+    assignment_margin_positive = 0
+    assignment_margin_items = 0
+
+    for child_map in parents.values():
+        all_item_count = sum(len(group_indices) for group_indices in child_map.values())
+        if all_item_count <= 1:
+            continue
+
+        unique_leaf_count = len(child_map)
+        colliding_item_count = sum(
+            len(group_indices)
+            for group_indices in child_map.values()
+            if len(group_indices) > 1
+        )
+        weighted_leaf_uniqueness += (unique_leaf_count / all_item_count) * all_item_count
+        weighted_collision_rate += (colliding_item_count / all_item_count) * all_item_count
+        uniqueness_items += all_item_count
+
+        if len(child_map) <= 1:
+            continue
+
+        child_tokens = list(child_map.keys())
+        child_centroids = {
+            child_token: embeddings[group_indices].float().mean(dim=0)
+            for child_token, group_indices in child_map.items()
+        }
+        for child_token in child_tokens:
+            own_centroid = child_centroids[child_token]
+            other_centroids = [
+                child_centroids[other_child_token]
+                for other_child_token in child_tokens
+                if other_child_token != child_token
+            ]
+            if not other_centroids:
+                continue
+            other_centroids_tensor = torch.stack(other_centroids, dim=0)
+            for item_idx in child_map[child_token]:
+                item_embedding = embeddings[item_idx].float()
+                own_distance = (item_embedding - own_centroid).pow(2).sum().item()
+                other_distances = (
+                    other_centroids_tensor - item_embedding.unsqueeze(0)
+                ).pow(2).sum(dim=-1)
+                nearest_sibling_distance = float(other_distances.min().item())
+                margin = nearest_sibling_distance - own_distance
+                assignment_margin_sum += margin
+                assignment_margin_positive += int(margin > 0.0)
+                assignment_margin_items += 1
+
+    return {
+        "same_parent_leaf_uniqueness": (
+            weighted_leaf_uniqueness / uniqueness_items if uniqueness_items > 0 else None
+        ),
+        "same_parent_collision_rate": (
+            weighted_collision_rate / uniqueness_items if uniqueness_items > 0 else None
+        ),
+        "same_parent_assignment_margin": (
+            assignment_margin_sum / assignment_margin_items
+            if assignment_margin_items > 0
+            else None
+        ),
+        "same_parent_positive_margin_fraction": (
+            assignment_margin_positive / assignment_margin_items
+            if assignment_margin_items > 0
+            else None
+        ),
+    }
+
+
 def compute_proxy_metrics(
     method_name: str,
     item_ids: List[int],
@@ -485,6 +659,8 @@ def compute_proxy_metrics(
     elif embeddings is not None:
         result.update(compute_prefix_compactness(cluster_ids, embeddings))
         result.update(compute_sibling_separation(cluster_ids, embeddings))
+        result.update(compute_pair_type_distance_ordering(cluster_ids, embeddings))
+        result.update(compute_same_parent_leaf_metrics(cluster_ids, embeddings))
         notes.append("Category metadata unavailable; used embedding compactness fallback.")
     else:
         result["prefix_metric_type"] = "unavailable"
@@ -492,6 +668,16 @@ def compute_proxy_metrics(
         result["sibling_separation_per_layer"] = []
         result["avg_sibling_separation"] = None
         result["near_collision_separation"] = None
+        result["full_collision_distance_mean"] = None
+        result["sibling_distance_mean"] = None
+        result["mid_prefix_distance_mean"] = None
+        result["unrelated_distance_mean"] = None
+        result["distance_gap_full_minus_sibling"] = None
+        result["distance_gap_unrelated_minus_sibling"] = None
+        result["same_parent_leaf_uniqueness"] = None
+        result["same_parent_collision_rate"] = None
+        result["same_parent_assignment_margin"] = None
+        result["same_parent_positive_margin_fraction"] = None
         notes.append(
             "Category metadata and embedding tensor were both unavailable; prefix purity/compactness not computed."
         )
@@ -529,6 +715,16 @@ def format_summary(result: Dict[str, Any]) -> str:
         )
         lines.append(
             f"  near_collision_separation: {result.get('near_collision_separation', 0.0):.6f}"
+        )
+        lines.append(
+            f"  same_parent_leaf_uniqueness: {result.get('same_parent_leaf_uniqueness', 0.0):.6f}"
+        )
+        lines.append(
+            f"  same_parent_assignment_margin: {result.get('same_parent_assignment_margin', 0.0):.6f}"
+        )
+        lines.append(
+            "  pair_type_distance_means: "
+            f"{json.dumps({'full': result.get('full_collision_distance_mean'), 'sibling': result.get('sibling_distance_mean'), 'mid': result.get('mid_prefix_distance_mean'), 'unrelated': result.get('unrelated_distance_mean')}, ensure_ascii=True)}"
         )
     else:
         lines.append("  prefix_metric: unavailable")

@@ -15,6 +15,7 @@ METADATA_CSV="${METADATA_CSV:-}"
 METADATA_JSON="${METADATA_JSON:-}"
 CATEGORY_FIELD="${CATEGORY_FIELD:-}"
 PREFIX_WEIGHT_SWEEP="${PREFIX_WEIGHT_SWEEP:-0.05,0.1,0.2}"
+WEIGHT_SELECTOR_SCRIPT="${WEIGHT_SELECTOR_SCRIPT:-scripts/select_semantic_id_weight.py}"
 COLLISION_WORSE_THRESHOLD="${COLLISION_WORSE_THRESHOLD:-0.03}"
 FRAC_UNIQUE_MIN_IMPROVEMENT="${FRAC_UNIQUE_MIN_IMPROVEMENT:--0.01}"
 ENTROPY_AVG_DROP_THRESHOLD="${ENTROPY_AVG_DROP_THRESHOLD:-0.15}"
@@ -605,7 +606,7 @@ run_weight_sweep_for_label() {
   run_proxy_metrics_for_specs "${sweep_proxy_dir}" "${proxy_run_specs[@]}"
 
   local select_cmd=(
-    python scripts/select_semantic_id_weight.py
+    python "${WEIGHT_SELECTOR_SCRIPT}"
     "--method-family" "${label}"
     "--baseline-train-dir" "${baseline_train_dir}"
     "--baseline-proxy-json" "${baseline_proxy_json}"

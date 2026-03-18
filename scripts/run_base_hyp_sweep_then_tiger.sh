@@ -59,6 +59,8 @@ BASE_TIGER_DIR="${BASE_TIGER_DIR:-${RECOMMENDATION_STAGE_ROOT}/tiger_train_base}
 HYP_TIGER_DIR="${HYP_TIGER_DIR:-${RECOMMENDATION_STAGE_ROOT}/tiger_train_hyp_prefix}"
 
 SUMMARY_FILE="${SUMMARY_FILE:-${RUN_ROOT}/SUMMARY.md}"
+PROXY_ANALYSIS_SCRIPT="${PROXY_ANALYSIS_SCRIPT:-scripts/analyze_semantic_ids.py}"
+WEIGHT_SELECTOR_SCRIPT="${WEIGHT_SELECTOR_SCRIPT:-scripts/select_semantic_id_weight.py}"
 
 cd "${REPO_DIR}" || exit 1
 mkdir -p "${RUN_ROOT}"
@@ -456,7 +458,7 @@ if [[ "${RUN_SEMANTIC_STAGE}" == "1" ]]; then
 
   reset_path "${SWEEP_PROXY_DIR}"
   proxy_cmd=(
-    python scripts/analyze_semantic_ids.py
+    python "${PROXY_ANALYSIS_SCRIPT}"
     --output-dir "${SWEEP_PROXY_DIR}"
     --embedding-path "${EMBEDDING_PATH}"
     --codebook-size "${CODEBOOK_WIDTH}"
@@ -475,7 +477,7 @@ if [[ "${RUN_SEMANTIC_STAGE}" == "1" ]]; then
   SELECTION_JSON="${SWEEP_ROOT}/selection.json"
   SELECTION_MD="${SWEEP_ROOT}/selection.md"
   select_cmd=(
-    python scripts/select_semantic_id_weight.py
+    python "${WEIGHT_SELECTOR_SCRIPT}"
     --method-family hyp_prefix
     --baseline-train-dir "${BASE_TRAIN_DIR}"
     --baseline-proxy-json "${SWEEP_PROXY_DIR}/base.json"
@@ -534,7 +536,7 @@ if [[ "${RUN_SEMANTIC_STAGE}" == "1" ]]; then
     "final-proxy" \
     "${PROXY_OUTPUT_DIR}/stdout.log" \
     "${PROXY_OUTPUT_DIR}/stderr.log" \
-    python scripts/analyze_semantic_ids.py \
+    python "${PROXY_ANALYSIS_SCRIPT}" \
     --run "base=${BASE_INFERENCE_DIR}/pickle" \
     --run "hyp_prefix=${HYP_INFERENCE_DIR}/pickle" \
     --output-dir "${PROXY_OUTPUT_DIR}" \

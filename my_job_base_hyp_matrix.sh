@@ -36,6 +36,8 @@ export OUTPUT_ROOT
 export PREFIX_WEIGHT_SWEEP
 export MATRIX_RUNS
 export SEMANTIC_EMBEDDING_MODEL
+export PROXY_ANALYSIS_SCRIPT
+export WEIGHT_SELECTOR_SCRIPT
 export USE_SLURM_SRUN=1
 
 bash "${REPO_DIR}/scripts/run_base_hyp_semantic_matrix.sh"

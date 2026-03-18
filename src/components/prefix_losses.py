@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -70,7 +72,7 @@ class EuclideanPrefixLoss(nn.Module):
 
 
 class HyperbolicPrefixContrastiveLoss(nn.Module):
-    """Prefix-aware hyperbolic band loss over pairwise semantic relations."""
+    """Deep-level focused hyperbolic band loss over pairwise semantic relations."""
 
     def __init__(
         self,
@@ -80,15 +82,19 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
         other_target_max_distance: float = 1.2,
         other_target_gamma: float = 1.5,
         other_bandwidth: float = 0.25,
-        other_weight: float = 1.0,
+        other_group_weight: float = 0.25,
+        other_hard_fraction: float = 0.1,
         sibling_target_distance: float = 0.55,
         sibling_bandwidth: float = 0.08,
-        sibling_weight: float = 2.5,
-        sibling_lower_scale: float = 2.0,
+        sibling_group_weight: float = 1.5,
+        sibling_lower_scale: float = 3.0,
+        sibling_hard_fraction: float = 0.5,
         full_match_target_distance: float = 0.7,
         full_match_bandwidth: float = 0.1,
-        full_match_weight: float = 1.5,
-        full_match_lower_scale: float = 3.0,
+        full_match_group_weight: float = 2.0,
+        full_match_lower_scale: float = 4.0,
+        full_match_hard_fraction: float = 0.5,
+        hard_min_pairs: int = 32,
         max_ball_norm: float = 0.99,
         eps: float = 1e-6,
     ) -> None:
@@ -102,17 +108,37 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
         self.other_target_max_distance = other_target_max_distance
         self.other_target_gamma = other_target_gamma
         self.other_bandwidth = other_bandwidth
-        self.other_weight = other_weight
+        self.other_group_weight = other_group_weight
+        self.other_hard_fraction = other_hard_fraction
         self.sibling_target_distance = sibling_target_distance
         self.sibling_bandwidth = sibling_bandwidth
-        self.sibling_weight = sibling_weight
+        self.sibling_group_weight = sibling_group_weight
         self.sibling_lower_scale = sibling_lower_scale
+        self.sibling_hard_fraction = sibling_hard_fraction
         self.full_match_target_distance = full_match_target_distance
         self.full_match_bandwidth = full_match_bandwidth
-        self.full_match_weight = full_match_weight
+        self.full_match_group_weight = full_match_group_weight
         self.full_match_lower_scale = full_match_lower_scale
+        self.full_match_hard_fraction = full_match_hard_fraction
+        self.hard_min_pairs = hard_min_pairs
         self.max_ball_norm = max_ball_norm
         self.eps = eps
+
+    def _reduce_group_loss(
+        self,
+        loss_matrix: torch.Tensor,
+        mask: torch.Tensor,
+        hard_fraction: float,
+    ) -> torch.Tensor:
+        values = loss_matrix[mask]
+        if values.numel() == 0:
+            return loss_matrix.new_tensor(0.0)
+
+        if 0.0 < hard_fraction < 1.0:
+            keep_count = max(self.hard_min_pairs, math.ceil(values.numel() * hard_fraction))
+            keep_count = min(values.numel(), keep_count)
+            values = torch.topk(values, k=keep_count, largest=True).values
+        return values.mean()
 
     def forward(self, embeddings: torch.Tensor, cluster_ids: torch.Tensor) -> torch.Tensor:
         batch_size, num_hierarchies = cluster_ids.shape
@@ -136,6 +162,9 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
             sibling_mask = torch.zeros_like(exact_match_mask)
 
         pair_mask = upper_triangle_pair_mask(batch_size, device=embeddings.device)
+        exact_match_mask = exact_match_mask & pair_mask
+        sibling_mask = sibling_mask & pair_mask
+        other_mask = pair_mask & ~(exact_match_mask | sibling_mask)
         lcp_ratio_others = lcp_ratio.clamp(
             max=max((num_hierarchies - 2) / max(num_hierarchies, 1), 0.0)
         )
@@ -145,23 +174,58 @@ class HyperbolicPrefixContrastiveLoss(nn.Module):
             * (self.other_target_max_distance - self.other_target_min_distance)
         )
         bandwidth = torch.full_like(target_distance, self.other_bandwidth)
-        pair_weight = torch.full_like(target_distance, self.other_weight)
         lower_scale = torch.ones_like(target_distance)
 
         target_distance[sibling_mask] = self.sibling_target_distance
         bandwidth[sibling_mask] = self.sibling_bandwidth
-        pair_weight[sibling_mask] = self.sibling_weight
         lower_scale[sibling_mask] = self.sibling_lower_scale
 
         target_distance[exact_match_mask] = self.full_match_target_distance
         bandwidth[exact_match_mask] = self.full_match_bandwidth
-        pair_weight[exact_match_mask] = self.full_match_weight
         lower_scale[exact_match_mask] = self.full_match_lower_scale
 
         a_ij = (target_distance - bandwidth).clamp_min(0.0)
         b_ij = target_distance + bandwidth
         lower_penalty = lower_scale * F.relu(a_ij - pairwise_dist).pow(2)
         upper_penalty = F.relu(pairwise_dist - b_ij).pow(2)
-        band_loss = pair_weight * (lower_penalty + upper_penalty)
+        band_loss = lower_penalty + upper_penalty
 
-        return band_loss[pair_mask].mean()
+        weighted_group_losses = []
+        group_weights = []
+
+        if exact_match_mask.any():
+            weighted_group_losses.append(
+                self.full_match_group_weight
+                * self._reduce_group_loss(
+                    band_loss,
+                    exact_match_mask,
+                    self.full_match_hard_fraction,
+                )
+            )
+            group_weights.append(self.full_match_group_weight)
+
+        if sibling_mask.any():
+            weighted_group_losses.append(
+                self.sibling_group_weight
+                * self._reduce_group_loss(
+                    band_loss,
+                    sibling_mask,
+                    self.sibling_hard_fraction,
+                )
+            )
+            group_weights.append(self.sibling_group_weight)
+
+        if other_mask.any():
+            weighted_group_losses.append(
+                self.other_group_weight
+                * self._reduce_group_loss(
+                    band_loss,
+                    other_mask,
+                    self.other_hard_fraction,
+                )
+            )
+            group_weights.append(self.other_group_weight)
+
+        if not weighted_group_losses:
+            return embeddings.new_tensor(0.0)
+        return torch.stack(weighted_group_losses).sum() / sum(group_weights)

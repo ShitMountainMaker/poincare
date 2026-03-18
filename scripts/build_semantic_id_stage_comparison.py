@@ -219,6 +219,22 @@ def build_row(
         "frac_unique_ids": proxy_result.get("frac_unique_ids"),
         "avg_sibling_separation": proxy_result.get("avg_sibling_separation"),
         "near_collision_separation": proxy_result.get("near_collision_separation"),
+        "same_parent_leaf_uniqueness": proxy_result.get("same_parent_leaf_uniqueness"),
+        "same_parent_collision_rate": proxy_result.get("same_parent_collision_rate"),
+        "same_parent_assignment_margin": proxy_result.get("same_parent_assignment_margin"),
+        "same_parent_positive_margin_fraction": proxy_result.get(
+            "same_parent_positive_margin_fraction"
+        ),
+        "full_collision_distance_mean": proxy_result.get("full_collision_distance_mean"),
+        "sibling_distance_mean": proxy_result.get("sibling_distance_mean"),
+        "mid_prefix_distance_mean": proxy_result.get("mid_prefix_distance_mean"),
+        "unrelated_distance_mean": proxy_result.get("unrelated_distance_mean"),
+        "distance_gap_full_minus_sibling": proxy_result.get(
+            "distance_gap_full_minus_sibling"
+        ),
+        "distance_gap_unrelated_minus_sibling": proxy_result.get(
+            "distance_gap_unrelated_minus_sibling"
+        ),
         "num_items": proxy_result.get("num_items"),
         "num_unique_ids": proxy_result.get("num_unique_ids"),
         "num_colliding_items": proxy_result.get("num_colliding_items"),
@@ -290,6 +306,16 @@ def ordered_fieldnames(rows: List[Dict[str, Any]]) -> List[str]:
         "frac_unique_ids",
         "avg_sibling_separation",
         "near_collision_separation",
+        "same_parent_leaf_uniqueness",
+        "same_parent_collision_rate",
+        "same_parent_assignment_margin",
+        "same_parent_positive_margin_fraction",
+        "full_collision_distance_mean",
+        "sibling_distance_mean",
+        "mid_prefix_distance_mean",
+        "unrelated_distance_mean",
+        "distance_gap_full_minus_sibling",
+        "distance_gap_unrelated_minus_sibling",
         "num_items",
         "num_unique_ids",
         "num_colliding_items",
@@ -344,7 +370,7 @@ def write_markdown(path: Path, rows: List[Dict[str, Any]]) -> str:
     lines = [
         "# Semantic ID Stage Comparison",
         "",
-        "| method | selected_weight | selection_mode | final_quantization_loss | final_reconstruction_loss | final_hierarchy_loss | avg_utilization | collision_rate | frac_unique_ids | avg_sibling_separation | near_collision_separation | prefix_metric_type |",
+        "| method | selected_weight | selection_mode | final_quantization_loss | final_hierarchy_loss | collision_rate | frac_unique_ids | avg_sibling_separation | near_collision_separation | same_parent_leaf_uniqueness | same_parent_assignment_margin | prefix_metric_type |",
         "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
 
@@ -357,13 +383,13 @@ def write_markdown(path: Path, rows: List[Dict[str, Any]]) -> str:
                     format_metric(row.get("selected_weight")),
                     format_metric(row.get("selection_mode")),
                     format_metric(row.get("final_quantization_loss")),
-                    format_metric(row.get("final_reconstruction_loss")),
                     format_metric(row.get("final_hierarchy_loss")),
-                    format_metric(row.get("avg_utilization")),
                     format_metric(row.get("collision_rate")),
                     format_metric(row.get("frac_unique_ids")),
                     format_metric(row.get("avg_sibling_separation")),
                     format_metric(row.get("near_collision_separation")),
+                    format_metric(row.get("same_parent_leaf_uniqueness")),
+                    format_metric(row.get("same_parent_assignment_margin")),
                     format_metric(row.get("prefix_metric_type")),
                 ]
             )
@@ -398,6 +424,15 @@ def write_markdown(path: Path, rows: List[Dict[str, Any]]) -> str:
         )
         lines.append(
             f"- sibling_separation_per_layer: `{json.dumps(sibling_values, ensure_ascii=True)}`"
+        )
+        lines.append(
+            f"- same_parent_leaf_uniqueness: `{format_metric(row.get('same_parent_leaf_uniqueness'))}`"
+        )
+        lines.append(
+            f"- same_parent_assignment_margin: `{format_metric(row.get('same_parent_assignment_margin'))}`"
+        )
+        lines.append(
+            f"- pair_type_distance_means: `{json.dumps({'full': row.get('full_collision_distance_mean'), 'sibling': row.get('sibling_distance_mean'), 'mid': row.get('mid_prefix_distance_mean'), 'unrelated': row.get('unrelated_distance_mean')}, ensure_ascii=True)}`"
         )
         lines.append("")
 

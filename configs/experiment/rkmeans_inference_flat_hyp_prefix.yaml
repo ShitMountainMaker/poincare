@@ -16,15 +16,19 @@ model:
     other_target_max_distance: 1.2
     other_target_gamma: 1.5
     other_bandwidth: 0.25
-    other_weight: 1.0
+    other_group_weight: 0.25
+    other_hard_fraction: 0.1
     sibling_target_distance: 0.55
     sibling_bandwidth: 0.08
-    sibling_weight: 2.5
-    sibling_lower_scale: 2.0
+    sibling_group_weight: 1.5
+    sibling_lower_scale: 3.0
+    sibling_hard_fraction: 0.5
     full_match_target_distance: 0.7
     full_match_bandwidth: 0.1
-    full_match_weight: 1.5
-    full_match_lower_scale: 3.0
+    full_match_group_weight: 2.0
+    full_match_lower_scale: 4.0
+    full_match_hard_fraction: 0.5
+    hard_min_pairs: 32
     max_ball_norm: 0.99
     eps: 1e-6
   hierarchy_loss_weight: 0.05
